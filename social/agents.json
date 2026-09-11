@@ -1,0 +1,1 @@
+{"project":"Quantum_Singularity","agents":[{"id":"singularity","name":"Singularity Agent","topic":"singularity"},{"id":"assistant","name":"Singularity Assistant","topic":"general"},{"id":"bot","name":"Singularity Bot","topic":"simulation"}],"social_layer":"Quantum.K/social"}
