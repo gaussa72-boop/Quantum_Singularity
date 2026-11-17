@@ -47,7 +47,7 @@ def get_ai_reply(text, mode="auto"):
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY fehlt in den Render Environment Variables.")
         from openai import OpenAI
-        model = os.getenv("OPENAI_MODEL", "gpt-6.1-sol").strip()
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
         response = OpenAI(api_key=api_key, timeout=45, max_retries=1).responses.create(
             model=model,
             instructions=IONOS_SYSTEM,
@@ -81,7 +81,7 @@ def health():
         "status": "ok",
         "project": "IONOS-7 / Quantum Singularity",
         "openai_configured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
-        "model": os.getenv("OPENAI_MODEL", "gpt-6.1-sol"),
+        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         "offline_memory": True,
     })
 
