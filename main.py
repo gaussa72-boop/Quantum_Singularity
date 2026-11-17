@@ -41,23 +41,66 @@ def get_ai_reply(text, mode="auto"):
         if fact and fact.lower() in text.lower():
             return f"Matrix-Erinnerung: {fact} ist nach den gespeicherten Daten {item.get('val', '')}.", "local-memory"
 
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    use_openai = mode == "openai" or (mode == "auto" and api_key)
-    if use_openai:
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    configured_provider = os.getenv("AI_PROVIDER", "auto").strip().lower()
+    if configured_provider not in ("auto", "openai", "openrouter"):
+        configured_provider = "auto"
+
+    # Prefer the explicitly selected provider; in auto mode use whichever secret exists.
+    provider = configured_provider
+    if provider == "auto":
+        provider = "openai" if openai_key else ("openrouter" if openrouter_key else "")
+    if mode == "openai":
+        provider = "openai"
+    elif mode == "auto" and not provider:
+        provider = ""
+
+    if mode != "offline" and provider:
+        if provider == "openai":
+            api_key = openai_key
+            base_url = None
+            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+        else:
+            api_key = openrouter_key
+            base_url = "https://openrouter.ai/api/v1"
+            model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip()
+
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY fehlt in den Render Environment Variables.")
+            raise RuntimeError(
+                f"{provider.upper()} ist ausgewählt, aber der passende API-Schlüssel fehlt in Render."
+            )
         from openai import OpenAI
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
-        response = OpenAI(api_key=api_key, timeout=45, max_retries=1).responses.create(
-            model=model,
-            instructions=IONOS_SYSTEM,
-            input=text,
-            max_output_tokens=900,
-        )
-        answer = (response.output_text or "").strip()
+        client_args = {"api_key": api_key, "timeout": 45, "max_retries": 1}
+        if base_url:
+            client_args["base_url"] = base_url
+        client = OpenAI(**client_args)
+        if provider == "openai":
+            response = client.responses.create(
+                model=model,
+                instructions=IONOS_SYSTEM,
+                input=text,
+                max_output_tokens=900,
+            )
+            answer = (response.output_text or "").strip()
+        else:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": IONOS_SYSTEM},
+                    {"role": "user", "content": text},
+                ],
+                max_tokens=900,
+            )
+            answer = (response.choices[0].message.content or "").strip()
         if not answer:
             raise RuntimeError("Das Modell hat keine Textantwort geliefert.")
-        return answer, model
+        return answer, f"{provider}:{model}"
+
+    if mode == "openai":
+        raise RuntimeError("OPENAI_API_KEY fehlt in den Render Environment Variables.")
+    if mode == "auto" and not (openai_key or openrouter_key):
+        logging.error("No AI provider configured: set OPENAI_API_KEY or OPENROUTER_API_KEY.")
 
     # Honest offline fallback: saved facts and basic guidance only, not a generative LLM.
     return (
@@ -81,6 +124,9 @@ def health():
         "status": "ok",
         "project": "IONOS-7 / Quantum Singularity",
         "openai_configured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        "openrouter_configured": bool(os.getenv("OPENROUTER_API_KEY", "").strip()),
+        "ai_configured": bool(os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("OPENROUTER_API_KEY", "").strip()),
+        "provider": os.getenv("AI_PROVIDER", "auto").strip().lower(),
         "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         "offline_memory": True,
     })
