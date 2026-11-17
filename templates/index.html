@@ -46,6 +46,9 @@
         .input-bar { display: flex; padding: 20px; border-top: 1px solid var(--gold); background: rgba(0,0,0,0.5); }
         input { flex: 1; background: transparent; border: 1px solid var(--gold); color: var(--gold); padding: 12px; outline: none; }
         button { background: var(--gold); border: none; padding: 0 25px; cursor: pointer; font-weight: bold; }
+        #mode { max-width:165px; min-width:125px; background:#080b12; border:1px solid var(--gold); color:var(--gold); padding:10px 8px; border-radius:7px; }
+        #run-button:disabled { opacity:.55; cursor:wait; }
+        @media(max-width:600px){ #mode{max-width:118px;min-width:95px;font-size:11px} .input-bar{gap:6px;padding:12px} }
 
         .ignite { transform: scale(50); opacity: 0; pointer-events: none; }
     </style>
@@ -76,9 +79,15 @@ a{color:#9eeaf5}img{max-width:100%;height:auto}
         <div class="chat-ui">
             <div id="display"></div>
             <div class="input-bar">
+                <select id="mode" aria-label="KI-Modus" title="KI-Modus">
+                    <option value="auto">Auto</option>
+                    <option value="offline">Offline · Gedächtnis/Fallback</option>
+                    <option value="openai">Online · OpenAI</option>
+                </select>
                 <input type="text" id="msg" placeholder="Befehl an IONOS-7..." onkeypress="if(event.key==='Enter') send()">
-                <button onclick="send()">RUN</button>
+                <button id="run-button" onclick="send()">RUN</button>
             </div>
+            <div id="chat-status" role="status" aria-live="polite" style="padding:0 20px 14px;color:#c7b66d;font-size:12px;">Offline nutzt lokales Fakten-Gedächtnis und eine einfache Reflexionsantwort – kein lokales Sprachmodell.</div>
         </div>
     </div>
 
@@ -127,17 +136,47 @@ a{color:#9eeaf5}img{max-width:100%;height:auto}
         }
 
         async function send() {
-            const i = document.getElementById('msg'), d = document.getElementById('display');
-            if(!i.value) return;
-            d.innerHTML += `<div>> USER: ${i.value}</div>`;
-            const r = await fetch('/chat', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({msg: i.value})
-            });
-            const data = await r.json();
-            d.innerHTML += `<div style="color:var(--gold);">[AI]: ${data.reply}</div>`;
-            i.value = ''; d.scrollTop = d.scrollHeight;
+            const input = document.getElementById('msg');
+            const display = document.getElementById('display');
+            const mode = document.getElementById('mode').value;
+            const button = document.getElementById('run-button');
+            const status = document.getElementById('chat-status');
+            const message = input.value.trim();
+            if (!message || button.disabled) return;
+            const addLine = (label, value, color) => {
+                const line = document.createElement('div');
+                line.style.whiteSpace = 'pre-wrap';
+                line.style.overflowWrap = 'anywhere';
+                if (color) line.style.color = color;
+                line.textContent = label + value;
+                display.appendChild(line);
+            };
+            addLine('> USER: ', message);
+            input.value = '';
+            button.disabled = true;
+            button.textContent = '…';
+            status.textContent = mode === 'offline'
+                ? 'Offline-Modus · lokales Gedächtnis / einfache Fallback-Antwort'
+                : mode === 'openai' ? 'Online-Modus · OpenAI' : 'Auto-Modus · verfügbare Verbindung wird gewählt';
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message, mode})
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+                addLine('[AI]: ', data.reply || 'Keine Antwort erhalten.', 'var(--gold)');
+                status.textContent = 'Antwort über: ' + (data.provider || 'nicht angegeben');
+            } catch (error) {
+                addLine('[FEHLER]: ', error.message || 'Die Anfrage ist fehlgeschlagen.', '#ff9a8a');
+                status.textContent = 'Anfrage fehlgeschlagen';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'RUN';
+                input.focus();
+                display.scrollTop = display.scrollHeight;
+            }
         }
         window.onload = init;
     </script>
